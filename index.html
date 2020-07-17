@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+
+<html lang="en-US">
+
+<head>
+    <title>PIC32MZW1 cloud device control</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="stylesheets/styleSheetStart.css">
+    <link rel="stylesheet" href="stylesheets/lightBulb.css">
+
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+
+    <script src="resources/cognito-dist/amazon-cognito-auth.min.js"></script>
+    <script src="resources/aws-sdk.min.js"> </script>
+    <script src="resources/bundle.js"></script>
+    <link rel="stylesheet" type="text/css"
+        href="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.1.0/cookieconsent.min.css" />
+    <script src="//cdnjs.cloudflare.com/ajax/libs/cookieconsent2/3.1.0/cookieconsent.min.js"></script>
+    <script>
+        window.addEventListener("load", function () {
+            window.cookieconsent.initialise({
+                "palette": {
+                    "popup": {
+                        "background": "#3c404d",
+                        "text": "#d6d6d6"
+                    },
+                    "button": {
+                        "background": "#8bed4f"
+                    }
+                },
+                "content": {
+                    "href": "https://www.microchip.com/about-us/legal-information/cookies"
+                }
+            })
+        });
+    </script>
+    <script type="text/javascript">
+
+        var thingShadows;
+        var connstate = false
+        function thingConnect() {
+            var clientID = 'webapp:' + new Date().getTime(); //needs to be unique 
+            console.log(clientID);
+            //thingName = "MZW1-01-QWERTY"
+            thingShadows = AwsIot.thingShadow({
+                clientId: clientID,
+                host: 'a3adakhi3icyv9-ats.iot.us-east-2.amazonaws.com', //can be queried using 'aws iot describe-endpoint'
+                //host: 'a3adakhi3icyv9-ats.iot.us-east-1.amazonaws.com',
+                protocol: 'wss',
+                accessKeyId: AWS.config.credentials.accessKeyId,
+                secretKey: AWS.config.credentials.secretAccessKey,
+                sessionToken: AWS.config.credentials.sessionToken
+            });
+
+            thingShadows.on('connect', function () {
+                console.log("connected")
+                for (i = 0; i < thingList.length; i++) {
+                    console.log(thingList[i])
+                    
+
+                    registerShadow(thingList[i])
+                }
+                $("#queryResultDiv").html("");
+                connstate = true;
+            });
+        }
+
+        var registeredThingList = []
+        function getThingShadow(thingName) {
+            thingShadows.get(thingName);
+        }
+
+        function unregisterShadow(thingName) {
+            index = $.inArray(thingName, registeredThingList)
+            if (-1 != index) {
+                thingShadows.unregister(thingName);
+                registeredThingList.splice(index, 1)
+            }
+            else {
+                console.error("unregistering non-registered thing")
+            }
+        }
+
+        function updateShadow(thingName, state) {
+            var rgbLedLampState = { "state": { "desired": { "SW": state } } };
+            clientTokenUpdate = thingShadows.update(thingName, rgbLedLampState);
+            if (null === clientTokenUpdate) {
+                console.error("shadow update failed for " + thingName)
+                return false
+            }
+            return true
+
+        }
+
+        function registerShadow(thingName) {
+            if (-1 == $.inArray(thingName, registeredThingList)) {
+                
+                thingShadows.register(thingName, {}, function () {
+                    console.log("registerShadow1 ", thingName)
+                    registeredThingList.push(thingName)
+                    console.log(registeredThingList)
+                    thingShadows.get(thingName);
+
+
+
+                });
+
+
+                thingShadows.on('status', function (name, stat, clientToken, stateObject) {
+                    refreshStatus(name, stateObject);
+                    console.log(`received (${clientToken}) ` + stat + ' on ' + name + ': ' + JSON.stringify(stateObject))
+
+                    if (document.getElementById("registerButton").innerText == "Connect")
+                    {
+                        document.getElementById("registerButton").innerText = "Disconnect";
+                        $("#regResultDiv").html(`<font color=\"green\">Success...</font>`)
+                        $("#regResultDiv").show()
+                        $("#regResultDiv").delay(3000).fadeOut(400);
+                        
+                    }
+                })
+
+                thingShadows.on('foreignStateChange', function (name, operation, stateObject) {
+                    refreshStatus(name, stateObject);
+                    console.log(operation + " on " + name + JSON.stringify(stateObject));
+                })
+
+                thingShadows.on('close', function () {
+                    console.log('close');
+                    $("#queryResultDiv").html("<font color=\"#f79da1\">connection closed.</font>");
+                    //thingShadows.unregister(thingName);
+                });
+
+                thingShadows.on('error', function (error) {
+                    console.error('error', error);
+                });
+
+                thingShadows.on('reconnect', function () {
+                    console.log('reconnect');
+                    $("#queryResultDiv").html("<font color=\"#f79da1\">Reconnecting...</font>");
+                });
+
+                thingShadows.on('offline', function () {
+                    console.error('offline');
+                    $("#queryResultDiv").html("<font color=\"#f79da1\">Offline...</font>");
+                });
+
+                /*thingShadows.on('message', function (topic, payload) {
+                    console.log('message', topic, payload.toString());
+                });*/
+
+                /*ignoreDeltas is true in register by default. So no deltas.
+                thingShadows.on('delta', function (thingName, stateObject) {
+                    console.log('delta on: ' + thingName + JSON.stringify(stateObject));
+                });*/
+
+                thingShadows.on('timeout', function (thingName, clientToken) {
+                    console.error("Timedout on " + thingName)
+                    //thingShadows.get(thingName)
+                    //handleTimeout(thingName, clientToken);
+                });
+            }
+        }
+        //MQTT connect after login
+        function connect() {
+            var clientID = 'webapp:' + new Date().getTime(); //needs to be unique 
+            device = AwsIot.device({
+                clientId: clientID,
+                host: 'a3eoywlgsbdhs8-ats.iot.us-east-1.amazonaws.com', //can be queried using 'aws iot describe-endpoint'
+                protocol: 'wss',
+                accessKeyId: AWS.config.credentials.accessKeyId,
+                secretKey: AWS.config.credentials.secretAccessKey,
+                sessionToken: AWS.config.credentials.sessionToken
+            });
+
+            console.info("trying to connect");
+            device.on('connect', function () {
+                console.info("connected")
+                //device.subscribe('testTopic');
+                subscribeMessage(device, 'MZW1-01-QWERTY/subTopic');
+                publishMessage(device, 'MZW1-01-QWERTY/testTopic', 'demo success!')
+            });
+
+            device.on('message', function (topic, payload, packet) {
+                console.info("message", topic);
+            });
+
+            device.on('close', function () {
+                console.info("close");
+            });
+
+            device.on('reconnect', function () {
+                console.info("reconnect");
+            });
+
+            device.on('offline', function () {
+                console.info("offline");
+            });
+
+            device.on('error', function () {
+                console.info("error");
+            });
+
+
+            function publishMessage(device, topic, msg) {
+                device.publish(topic, msg, { qos: 1 }, function (err) {
+                    if (err) {
+                        alert("failed to publish iot message!");
+                        console.error(err);
+                    } else {
+                        console.info("published to demoTopic");
+                        //showMessage("Message Published", "Topic: " + topic, "Message: " + msg);
+                    }
+                });
+            }
+            function subscribeMessage(device, topic) {
+                console.info("subscribe", topic);
+                device.subscribe(topic, { qos: 1 }, function (err) {
+                    if (err) {
+                        alert("failed to subscribe iot message!");
+                        console.error(err);
+                    } else {
+                        console.info("subscribe success");
+                        //showMessage("Message Published", "Topic: " + topic, "Message: " + msg);
+                    }
+                });
+            }
+        }
+        //handle UI for sign  in
+        var userVariable = {}
+        function showSignedIn(session) {
+            //$("#resultDiv").html("You have signed in")
+            idToken = session.getIdToken().getJwtToken();
+            if (idToken) {
+                userVariable.idToken = JSON.parse(JSON.stringify(idToken))
+                var payload = idToken.split('.')[1];
+                var tokenobj = JSON.parse(atob(payload));
+                userVariable.email = JSON.parse(JSON.stringify(tokenobj.email))
+                userVariable.principal = AWS.config.credentials.identityId;
+                userVariable.emailVerified = tokenobj.email_verified
+            }
+            else {
+                console.error("no idToken received for user")
+                auth.signOut();
+                showSignedOut();
+            }
+            //console.log(userVariable)
+            $("#emailDiv").html(userVariable.email)
+            $("#signInButton").html("Sign Out")
+            $("#deviceDetails").prop("hidden", false)
+            $("#imageDetails").prop("hidden", false)
+            ///refreshDevice()
+        }
+        //handle UI for sign  out
+        function showSignedOut() {
+            var userVariable = {}
+            $("#emailDiv").html("")
+        }
+        // Initialize a cognito auth object.
+        function initCognitoSDK() {
+            AWS.config.region = 'us-east-2'
+            var authData = {
+                //ClientId: "6b5kekt3kcuqf8cj5rujamjftd", // Your client id here
+                ClientId: "39dmr0kf63b7jhs16qrdtshui6", // Your client id here
+                AppWebDomain: "rio2-audio-stream-prj.auth.us-east-2.amazoncognito.com",
+                //AppWebDomain: "wsg-hk-alexa.auth.us-east-1.amazoncognito.com",
+                //AppWebDomain: "pic32mzw1.auth.us-east-1.amazoncognito.com",
+                TokenScopesArray: ["email", "openid"], // e.g.['phone', 'email', 'profile','openid', 'aws.cognito.signin.user.admin'],
+                RedirectUriSignIn: "https://ec2-18-219-138-196.us-east-2.compute.amazonaws.com",
+                RedirectUriSignOut: "https://ec2-18-219-138-196.us-east-2.compute.amazonaws.com",
+                //RedirectUriSignIn: "http://localhost:8000",
+                //RedirectUriSignOut: "http://localhost:8000",
+                //UserPoolId: "us-east-1_6RPZirW0i", // Your user pool id here
+                UserPoolId: "us-east-2_EnqVEshVJ", // Your user pool id here
+            };
+            var login = {};
+            var auth = new AmazonCognitoIdentity.CognitoAuth(authData);
+            auth.userhandler = {
+                onSuccess: function (result) {
+                    //alert("Sign in success");
+                    //console.info("Sign in success")
+                    console.info("IDToken: " + result.getIdToken().getJwtToken())
+                    $("#signInButton").html("<font color=\"red\">Signing in ...</font>")
+                    history.pushState({}, "", "/"); //clear token displayed in URL for aesthetics
+                    var loginKey = 'cognito-idp.' + AWS.config.region + '.amazonaws.com/' + authData['UserPoolId'];
+                    login[loginKey] = result.getIdToken().getJwtToken();
+                    AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+                        //IdentityPoolId: 'us-east-1:9f4abc05-2b12-42c4-934c-2bfac83f66ba',
+                        IdentityPoolId: 'us-east-2:9a3fa135-c8b4-4896-ba9c-04b92459d999',
+                        Logins: login
+                    });
+                    AWS.config.credentials.refresh((error) => {
+                        $("#signInButton").html("Sign Out")
+                        if (error) {
+                            console.error(error);
+                            auth.signOut();
+                            showSignedOut();
+                        } else {
+                            var principal = AWS.config.credentials.identityId;
+                            console.log("IdentityId: " + principal);
+                            attachPrincipalPolicy("rio2_audio_streaming_webapp", principal);
+                            //connect();
+                            showSignedIn(result)
+                            
+                            //thingConnect();
+                        }
+                    });
+                },
+                onFailure: function (err) {
+                    console.error("Error! in initCognitoSDK");
+                }
+            };
+            return auth;
+        }
+
+        //Need aws-sdk.js to work
+        function attachPrincipalPolicy(policyName, principal) {
+          new AWS.Iot().attachPrincipalPolicy({ policyName: policyName, principal: principal }, function (err, data) {
+            if (err) {
+                    console.error(err); // an error occurred
+                }
+          });
+        }
+
+        // Perform user operations.
+        function userButton(auth) {
+            var state = document.getElementById('signInButton').innerHTML;
+            if (state === "Sign Out") {
+                document.getElementById("signInButton").innerHTML = "Sign In";
+                auth.signOut();
+                showSignedOut();
+            } else {
+                auth.getSession();
+            }
+        }
+        var auth;
+        let lastCall = 0;
+        function regButtonClick() {
+            err = false
+            $('.cube-switch .switch').click(function () {
+                const now = (new Date).getTime();
+                if (now - lastCall < 1000) {    //throttle clicks
+                    console.error("throttled")
+                    $("#queryResultDiv").html(`<div class="alert alert-warning alert-dismissible">
+                        <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                        Throttled!!
+                      </div>`)
+                    $("#queryResultDiv").show();
+                    $("#queryResultDiv").delay(now - lastCall).fadeOut(400);
+                    return;
+                }
+                thingName = this.id.replace('SW_', '');
+                if (true == connstate && $("#onSpan_" + thingName).hasClass('online')) {
+                    if ($("#C" + this.id).hasClass('active')) {
+                        deviceOn = false
+                    }
+                    else {
+                        deviceOn = true
+                    }
+                    retval = updateShadow(thingName, deviceOn)
+                    if (!retval) {
+                        $("#queryResultDiv").html(`<div class="alert alert-danger alert-dismissible">
+                        <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                        Failed performing action
+                      </div>`)
+                        $("#queryResultDiv").show();
+                        $("#queryResultDiv").delay(1000).fadeOut(400);
+                        console.error("Failed performing action")
+                    }
+                    else {
+                        $("#queryResultDiv").html(`<div class="alert alert-success alert-dismissible">
+                            <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                            Request submitted
+                          </div>`)
+                        $("#queryResultDiv").delay(800).fadeOut(400);
+                        $("#queryResultDiv").show();
+                    }
+                }
+                else {
+                    console.log("device not online")
+                  
+                    $("#queryResultDiv").html(`<div class="alert alert-warning alert-dismissible">
+                        <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                        Device offline
+                      </div>`)
+                    $("#queryResultDiv").delay(800).fadeOut(400);
+                    $("#queryResultDiv").show();
+                }
+                lastCall = now;
+            });
+        }
+        function onLoad() {
+            $("#regSerial").val("")
+
+            $(document).popover({
+                selector: '[data-toggle=popover]',
+                trigger: 'focus',
+                animation: true
+            });
+
+            //refresh page after a minute of inactivity
+            var time = new Date().getTime();
+            $(document.body).bind("mousemove keypress", function (e) {
+                time = new Date().getTime();
+            });
+
+            function refresh() {
+                if (new Date().getTime() - time >= 300000)
+                    window.location.reload(true);
+                else
+                    setTimeout(refresh, 10000);
+            }
+
+            setTimeout(refresh, 10000);
+
+            auth = initCognitoSDK();
+            document.getElementById("signInButton").addEventListener("click", function () {
+                userButton(auth);
+            });
+            var curUrl = window.location.href;
+            auth.parseCognitoWebResponse(curUrl);
+        }
+        var downloadInProgress = false;
+        function download(thingName, filename, text) {
+            var element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+            element.setAttribute('download', filename);
+
+            element.style.display = 'none';
+            document.body.appendChild(element);
+
+            element.click();
+
+            document.body.removeChild(element);
+            $(`#SP_${thingName}`).prop("hidden", true);
+            downloadInProgress = false;
+        }
+
+        
+
+        function registerDevice() {
+            var registrationData = {}
+
+            if (document.getElementById("registerButton").innerText == "Disconnect")
+            {
+                for (i = 0; i < thingList.length; i++) {
+                    console.log(thingList[i]);
+                    unregisterShadow(thingList[i]);
+                }
+                obj.thingName = "";
+                document.getElementById("registerButton").innerText = "Connect";
+            }
+            else 
+            {
+                //if (false === $("#registrationForm")[0].checkValidity()) {
+                //    $("#regResultDiv").html(`<div class="alert alert-warning alert-dismissible">
+                //            <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                //            Enter a valid serial number and Name
+                //        </div>`)
+                //    return;
+                //}
+                registrationData.deviceSerial = $("#regSerial").val().trim();
+
+                registrationData.principal = userVariable.principal;
+                //registrationData.sessionID = userVariable.idToken;
+                //console.info("POST data: " + JSON.stringify(registrationData))
+                $("#regResultDiv").html("<font color=\"green\">Requesting...</font>");
+                obj.thingName = $("#regSerial").val().trim()
+                refreshDevice();
+            }
+            /*
+            $("#registerButton").prop("disabled", true);
+            $.ajax({
+                type: 'POST',
+                url: 'https://api.pic32mzw1.xyz/V1/registerdevice',
+                contentType: "application/json",
+                dataType: 'json',
+                data: JSON.stringify(registrationData),
+                headers: { "Auth-Token": userVariable.idToken },
+                success: function (data) {
+                    //console.info("post successful. Data: " + JSON.stringify(data))
+                    if (typeof data.errorMessage !== 'undefined') {
+                        $("#regResultDiv").html(`<div class="alert alert-danger alert-dismissible">
+                            <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                            <strong>Registration failed. Contact admin    </strong>
+                        </div>`)
+                        $("#regSerial").val("")
+
+                    }
+                    if (typeof data.body !== 'undefined') {
+                        if (true === data.body.Error) {
+                            $("#regResultDiv").html(`<div class="alert alert-danger alert-dismissible">
+                                    <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                                    ${data.body.ErrorMessage}
+                                  </div>`)
+                            $("#regSerial").val("")
+
+                        }
+                        else {
+                            $("#regResultDiv").html(`<div class="alert alert-success alert-dismissible">
+                                    <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                                    <strong>Success!!</strong> Registered to ${userVariable.email}
+                                  </div>`)
+                            $("#regResultDiv").show()
+                            $("#regResultDiv").delay(3000).fadeOut(400);
+                            $("#regSerial").val("")
+
+                        }
+                    }
+                },
+                complete: function () {
+                    $("#registerButton").prop("disabled", false);
+                    refreshDevice();
+                },
+                error: function (XMLHttpRequest, textStatus, errorThrown) {
+                    console.error("Registration Failed")
+                    $("#regResultDiv").html("Registration request failed. Please retry -- <font color=\"red\"><b>" + textStatus + "</b></font>");
+                    auth.signOut()
+                    return;
+                }
+                
+            });
+            */
+        }
+        function removeDevice(thingName) {
+            unregisterShadow(thingName)
+            var registrationData = {}
+            registrationData.deviceSerial = thingName;
+            registrationData.principal = userVariable.principal;
+            //registrationData.sessionID = userVariable.idToken;
+            //console.info("POST data: " + JSON.stringify(registrationData))
+            $(`#RC_${thingName}`).prop("disabled", true)
+            $("#queryResultDiv").html("<font color=\"#f79da1\">Connecting...</font>");
+            $.ajax({
+                type: 'POST',
+                url: 'https://api.pic32mzw1.xyz/V1/unregisterdevice',
+                contentType: "application/json",
+                dataType: 'json',
+                data: JSON.stringify(registrationData),
+                headers: { "Auth-Token": userVariable.idToken },
+                success: function (data) {
+                    //console.info("post successful. Data: " + JSON.stringify(data))
+                    if (typeof data.errorMessage !== 'undefined') {
+                        $("#queryResultDiv").html(`<div class="alert alert-danger alert-dismissible">
+                            <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                            <strong>un-registration failed. Contact admin    </strong>
+                        </div>`)
+                        refreshDevice();
+                    }
+                    if (typeof data.body !== 'undefined') {
+                        if (true === data.body.Error) {
+                            $("#queryResultDiv").html(`<div class="alert alert-danger alert-dismissible">
+                                    <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                                    ${data.body.ErrorMessage}
+                                  </div>`)
+                            refreshDevice();
+                        }
+                        else {
+                            $("#queryResultDiv").html(`<div class="alert alert-success alert-dismissible">
+                                    <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                                    <strong>Success!!</strong> Device Unregistered ${userVariable.email}
+                                  </div>`)
+                            $("#regSerial").val("")
+
+                            refreshDevice();
+                        }
+                    }
+                },
+                complete: function () {
+                    $(`#RC_${thingName}`).prop("disabled", false)
+                },
+                error: function (XMLHttpRequest, textStatus, errorThrown) {
+                    console.error("Registration Failed")
+                    $("#queryResultDiv").html("Registration request failed. Please retry -- <font color=\"red\"><b>" + textStatus + "</b></font>");
+                    //auth.signOut()
+                    return;
+                }
+            });
+        }
+        function refreshStatus(name, stateObject) {
+	    var timer = -1;
+            //console.log(stateObject)
+            if (typeof stateObject.state.reported !== 'undefined') {
+
+                //online Indicator
+                if (stateObject.state.reported.online) {
+                    $(`#Online_${name}`).html(`<span id="onSpan_${name}" class="text-center mt-2 unselectable online" tabindex="-1" data-toggle="popover" data-trigger="focus" data-placement="auto"  
+                    title="Online"> <font color="#00ff27">&#x2B24;</font></span>`)
+                }
+                else {
+                    $(`#Online_${name}`).html(`<span id="onSpan_${name}" class="text-center mt-2 unselectable offline" tabindex="-1" data-toggle="popover" data-trigger="focus" data-placement="auto"  
+                    title="Offline"><font color="#ffc83d;">&#x26a0;</font></span>`)
+                }
+                //light status indicator
+                if (typeof stateObject.state.reported.SW !== 'undefined') {
+                    if (stateObject.state.reported.SW) {
+                        //light up the on screen device and turn switch ON
+                        $("#CSW_" + name).addClass('active');
+                        $("#LSW_" + name).css({ 'background': 'url(/resources/img/playback.png) no-repeat 0 0' });
+                        $("#LSW_" + name).css({ 'background-size': '100px 100px' });
+                        $("#LSW_" + name).css({ 'background-position': '100% 50%' });
+                        test_audio_id.style.display = '';
+                        
+                    }
+                    else {
+                        //switch off the on screen device and turn switch off
+                        $("#CSW_" + name).removeClass('active');
+                        $("#LSW_" + name).css({ 'background': 'url(/resources/img/stop_playback.png) no-repeat 0 0' });
+                        $("#LSW_" + name).css({ 'background-size': '100px 100px' });
+                        $("#LSW_" + name).css({ 'background-position': '0% 50%' });
+                        
+			test_audio_id.style.display = 'none';
+                        test_audio_id.pause();
+                    }
+                }
+                if (typeof stateObject.state.reported.SW !== 'undefined') {
+                    if (stateObject.state.reported.SW) {
+                        setTimeout(loadmusic, 500) 	//delay to play as the icecast stream take time to setup 
+			
+
+			var aud = document.getElementById("test_audio_id");
+		        aud.onabort = function() {
+	               		console.info("Audio load aborted");
+            		};
+	    		aud.oncanplay = function() {
+            			console.info("Audio can play");
+            			test_audio_id.play();
+            		};
+	            	aud.onpause = function() {
+        	    		console.info("Audio is pause");
+            		};
+	            	aud.ontimeupdate = function() {
+        	    		console.info("Audio time update");
+				if (timer != -1)
+				    clearTimeout(timer);
+                    		if ($("#CSW_" + name).hasClass('active')) {
+				    timer = setTimeout(chk_music_playback, 4000);
+				}
+            		};
+	            	aud.onerror = function() {
+        	    		console.info("Audio error");
+            		};
+	            	aud.onwaiting = function() {
+        	    		console.info("Audio is waiting");
+            		};
+	            	aud.onended = function() {
+        	    		console.info("Audio is ended");
+            			loadmusic();
+			};
+	            	aud.emptied = function() {
+        	    		console.info("Audio is emptied");
+            		};
+                    }
+                    else {
+                        
+                    }
+                }
+            }
+        }
+	function chk_music_playback(){
+            console.info("check music playback");
+            test_audio_id.load();
+            //test_audio_id.play();
+	
+	}
+        function loadmusic(){
+            console.info("audio loaded");
+            test_audio_id.load();
+            //test_audio_id.play();
+        }
+        function refreshThingTable() {
+            $('#deviceTable tbody').empty()
+            $('#imageTable tbody').empty()
+            for (i = 0; i < thingList.length; i++) {
+                if (true == connstate) {
+                    unregisterShadow(thingList[i])
+                }
+                if (true == thingObject[i].image) {
+                    console.log(thingObject[i].thingName + " has an image of version " + thingObject[i].imageVersion)
+                    var image = {}
+                    image.name = thingObject[i].thingName;
+                    image.version = thingObject[i].imageVersion;
+                    imageList.push(image)
+                }
+                else {
+                    console.log(thingObject[i].thingName + " has no image")
+                }
+                $('#deviceTable tbody').append(`<tr class="child" id=TR_${thingList[i]}>
+                        <td style="width: 30%">
+                            <div href="" class="cube-switch ml-2" id=CSW_${thingList[i]}>
+                                <span class="switch" id=SW_${thingList[i]}>
+                                    <span class="switch-state off unselectable"> <font color=#FF6060>Stop</font></span>
+                                    <span class="switch-state on unselectable"><font color=#A1FFA1>Play</font></span>
+                                </span>
+                            </div>
+                            <span class="text-light text-center mt-2 unselectable offline" tabindex="-1" data-toggle="popover" data-trigger="focus" data-placement="auto"  
+                            title="Serial" data-content="${thingList[i]}" >${thingObject[i].attributes.friendlyName}</span>
+                            <div id="Online_${thingList[i]}"><font color="yellow" size="2em">&#x21e9 fetching status</div>
+                        </td>
+                        <td style="width: 30%">
+                            <div id="LSW_${thingList[i]}" class="light-bulb"></div>
+			                    <!--
+                                <div id="LSW_${thingList[i]}" class="light-bulb off ui-draggable" style="opacity: 1; "></div>
+            
+                                <div id="LSW_${thingList[i]}2" class="light-bulb2" style="opacity: 0; "></div>
+                                -->
+                                <audio controls autoplay id="test_audio_id" style="display:none;">
+                                    <source src="https://ec2-18-219-138-196.us-east-2.compute.amazonaws.com:8443/example1.ogg" type="audio/ogg">
+                                </audio> 
+                                <!--
+                                <button type="button" class="close" id="RC_${thingList[i]}" onclick=removeDevice("${thingList[i]}")>
+                                        <span class="text-white" aria-hidden="true">&times; </span>
+                                </button>
+                                -->
+			    <!--</div>-->
+                        </td>
+                    </tr>`)
+
+                if (true == connstate) {
+                    registerShadow(thingList[i])
+                }
+            }
+
+            
+            regButtonClick()
+        
+	}
+        var thingList = []
+        var thingObject = []
+        var imageList = []
+        //var obj = {image: false, thingName: "test02102020", attributes: {friendlyName: "Demo"}}
+        var obj = {image: false, thingName: "", attributes: {friendlyName: "Demo"}}
+        function refreshDevice() {
+            var queryData = {}
+            //queryData.sessionID = userVariable.idToken;
+            $("#queryResultDiv").html("<font color=\"#f79da1\">Refreshing...</font>");
+            thingList = []
+            thingObject = []
+            imageList = []
+            refreshThingTable()
+            if (obj.thingName != "")
+            {
+                thingList.push(obj.thingName);
+                thingObject.push(obj);
+
+                thingConnect();
+                refreshThingTable();
+            }
+            
+/*
+            $.ajax({
+                type: 'POST',
+                url: 'https://api.pic32mzw1.xyz/V1/getuserdevices ',
+                contentType: "application/json",
+                dataType: 'json',
+                data: JSON.stringify(queryData),
+                headers: { "Auth-Token": userVariable.idToken },
+                success: function (data) {
+                    //console.info("post successful. Data: " + JSON.stringify(data))
+                    if (typeof data.errorMessage !== 'undefined') {
+                        $("#queryResultDiv").html(`<div class="alert alert-danger alert-dismissible">
+                            <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                            <strong>Refresh failed. Contact admin if problem persists  </strong>
+                        </div>`)
+                    }
+                    if (typeof data.body !== 'undefined') {
+                        if (200 != data.statusCode) {
+                            $("#queryResultDiv").html(`<div class="alert alert-warning alert-dismissible">
+                                    <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                                    No devices found</div>`)
+                        }
+                        else if (true === data.body.Error) {
+                            $("#queryResultDiv").html(`<div class="alert alert-danger alert-dismissible">
+                                    <a href="#" class="close" data-dismiss="alert" aria-label="close">&times;</a>
+                                    ${data.body.ErrorMessage}
+                                  </div>`)
+                        }
+                        else if (typeof data.body.things !== 'undefined') {
+                            thingList = []
+                            thingObject = []
+                            imageList = []
+                            thingObject = JSON.parse(JSON.stringify(data.body.things))
+                            for (i = 0; i < data.body.things.length; i++) {
+                                thingList.push(data.body.things[i].thingName)
+                            }
+                            $("#queryResultDiv").html("");
+                            thingConnect()
+                            refreshThingTable();
+                        }
+                    }
+                },
+                complete: function (data) {
+                    if (!connstate && thingList.length) { //policy will be setup if at least a device is registered
+                        thingConnect()
+                    }
+                },
+                error: function (XMLHttpRequest, textStatus, errorThrown) {
+                    console.error("Refresh Failed Failed")
+                    $("#queryResultDiv").html("Device refresh failed. Please retry -- <font color=\"red\"><b>" + textStatus + "</b></font>");
+                    //auth.signOut()
+                    return;
+                }
+            });
+            */
+        }
+    </script>
+</head>
+
+<body onload="onLoad()">
+    <div class="container">
+        <div class="row">
+            <div class="col mt-5 mb-5">
+                <a href="/"> <img src="/resources/img/mchpLogo.png" alt="Logo" class="img-responsive" align=left></a>
+                <h1 class="text-md-center  mt-5" style="font-size: 5.0vmin;">
+                    PIC32MZW1 Audio Streaming Application
+                </h1>
+            </div>
+        </div>
+
+        <div class="row" id="deviceDetails" hidden="true">
+            <div class="col-sm-8" style="background-color: rgb(70, 72, 75);">
+                <p class="text-center mt-3 font-weight-bold text-light">Control your device </p>
+                <div>
+                    <table class="table table-hover" id="deviceTable">
+                        <tbody>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="text-right mt-3 mb-3">
+                    <button type="button" class="btn btn-warning top-left-text"
+                        onclick="refreshDevice()">Refresh</button>
+                </div>
+                <div id="queryResultDiv" class="bottom-left-text"></div>
+            </div>
+            <div class="col-sm-4" style="background-color:lavenderblush">
+                <p class="text-center  mt-3 font-weight-bold">Register a device </p><br />
+                <form id="registrationForm">
+                    <input type="text" class="form-control input-sm" style="box-shadow: none; border:0" id="regSerial"
+                        placeholder="Device SerialNumber" autocomplete="off" required="required"
+                        pattern="[a-zA-Z0-9-]{1,30}" />
+
+                </form>
+                <div class="text-center mt-3">
+                    <button type="button" class="btn btn-primary" id="registerButton"
+                        onclick="registerDevice()">Connect</button>
+                    <br /><br />
+                </div>
+                <div id="regResultDiv"></div>
+                
+            </div>
+        </div>
+
+
+        <div class="row" id="startButtons">
+            <div class="col"></div>
+            <div class="button">
+                <a class="nav-tabs" id="signInButton" href="javascript:void(0)" title="Sign in">SignIn / SignUp</a>
+                <div id="resultDiv"></div>
+            </div>
+            <div class="col"></div>
+        </div>
+    </div>
+    <div class="footer" id="pageFooter">
+        <p></p>
+    </div>
+</body>
+
+</html>

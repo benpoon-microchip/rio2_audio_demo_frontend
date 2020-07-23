@@ -281,7 +281,6 @@
                     var loginKey = 'cognito-idp.' + AWS.config.region + '.amazonaws.com/' + authData['UserPoolId'];
                     login[loginKey] = result.getIdToken().getJwtToken();
                     AWS.config.credentials = new AWS.CognitoIdentityCredentials({
-                        //IdentityPoolId: 'us-east-1:9f4abc05-2b12-42c4-934c-2bfac83f66ba',
                         IdentityPoolId: 'us-east-2:9a3fa135-c8b4-4896-ba9c-04b92459d999',
                         Logins: login
                     });

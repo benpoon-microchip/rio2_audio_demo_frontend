@@ -45,11 +45,9 @@
         function thingConnect() {
             var clientID = 'webapp:' + new Date().getTime(); //needs to be unique 
             console.log(clientID);
-            //thingName = "MZW1-01-QWERTY"
             thingShadows = AwsIot.thingShadow({
                 clientId: clientID,
                 host: 'a3adakhi3icyv9-ats.iot.us-east-2.amazonaws.com', //can be queried using 'aws iot describe-endpoint'
-                //host: 'a3adakhi3icyv9-ats.iot.us-east-1.amazonaws.com',
                 protocol: 'wss',
                 accessKeyId: AWS.config.credentials.accessKeyId,
                 secretKey: AWS.config.credentials.secretAccessKey,
@@ -267,14 +265,9 @@
                 //ClientId: "6b5kekt3kcuqf8cj5rujamjftd", // Your client id here
                 ClientId: "39dmr0kf63b7jhs16qrdtshui6", // Your client id here
                 AppWebDomain: "rio2-audio-stream-prj.auth.us-east-2.amazoncognito.com",
-                //AppWebDomain: "wsg-hk-alexa.auth.us-east-1.amazoncognito.com",
-                //AppWebDomain: "pic32mzw1.auth.us-east-1.amazoncognito.com",
                 TokenScopesArray: ["email", "openid"], // e.g.['phone', 'email', 'profile','openid', 'aws.cognito.signin.user.admin'],
                 RedirectUriSignIn: "https://ec2-18-219-138-196.us-east-2.compute.amazonaws.com",
                 RedirectUriSignOut: "https://ec2-18-219-138-196.us-east-2.compute.amazonaws.com",
-                //RedirectUriSignIn: "http://localhost:8000",
-                //RedirectUriSignOut: "http://localhost:8000",
-                //UserPoolId: "us-east-1_6RPZirW0i", // Your user pool id here
                 UserPoolId: "us-east-2_EnqVEshVJ", // Your user pool id here
             };
             var login = {};
